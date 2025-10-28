@@ -2,7 +2,7 @@
 % Project Phase 2: Wing Design - Weight sizing
 % Jasper Palmer
 classdef weight
-    properties
+    properties (Constant)
         W_to = 0.98; % takeoff weight fraction
         W_de = 0.9925; % descent weight fraction
         W_la = 0.995; % landing weight fraction
@@ -33,7 +33,7 @@ classdef weight
                 C,... Consumption, 1/s
                 V,... Speed, m/s
                 Ld) % Lift to drag ratio in cruise
-            W_cr = exp((-R*C)/(V*Ld));
+            W_cr = exp(-R*C/V/Ld);
         end
 
         function W_loi = W_loi(...
@@ -71,29 +71,33 @@ classdef weight
                 Ld_lol,... (L/D)_{Loiter to landing}
                 t_lol) % Loiter to landing time (holding time), s
 
-            it = 0;
-            MP = [weight.W_to, weight.W_cl(0.1, M_cr), weight.W_cr(R, C_cr, V_cr, Ld_cr), weight.W_de,...
+            MP = [weight.W_to, weight.W_cl(0.2, M_cr), weight.W_cr(R, C_cr, V_cr, Ld_cr), weight.W_de,...
                 weight.W_loi(E, C_loi, Ld_loi), weight.W_cl(M_loi, M_cr),...
-                weight.W_cr(R, C_cr, V_cr, Ld_cr), weight.W_de, weight.W_loi(t_lol, C_lol, Ld_lol), W_la];
-            while (W_0 - W_0g) > 1 && it < 10000
-                it = it+1;
-                W_0g = W_0;
-                W_fi = zeros(length(MP));
-                W = zeros(length(MP)+1);
-                W(1) = W_0;
+                weight.W_cr(R, C_cr, V_cr, Ld_cr), weight.W_de, weight.W_loi(t_lol, C_lol, Ld_lol), weight.W_la];
+
+            W_0 = 9e9;
+            eps = 9e9;
+            iter = 0;
+
+            while eps > 1 && iter < 2
+                iter = iter+1;
+                
+                W_fi = zeros(1,length(MP));
+                W = zeros(1, length(MP)+1);
+                W(1) = W_0g;
 
                 for i = 1:numel(MP)
-                    W_fi(i) = W(i)*(1-MP(i));
-                    W(i+1) = W(i)-W_fi(i);
+                    W(i+1) = W(i)*MP(i);
+                    W_fi(i) = W(i)-W(i+1);
                 end
 
                 W_f = K_rf*sum(W_fi);
-                W_0 = (W_c+W_p+W_d+W_f)/(1-WeW0(W_0g, 1));
+                W_0 = abs((W_c+W_p+W_d+W_f)/(1-weight.WeW0(W_0g, 1)));
+
+                eps = abs(W_0 - W_0g);
+                W_0g = W_0;
+
             end
-            % W_fstored = zeros(length(MP));
-            % for i = 1:length(W_fi)
-            %     W_fstored(i) = W_f-sum(W_fi(1:i));
-            % end
         end
     end
 end
