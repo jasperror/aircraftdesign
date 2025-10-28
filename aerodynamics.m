@@ -4,9 +4,10 @@
 
 % todo -- convert all sweeps to radians or degrees? same with AoA?
 classdef aerodynamics
-    properties
+    properties (Constant)
         DC_l_max_TE = 1.3; % Assuming slotted flap
         DC_l_max_LE = 0.3; % Assuming leading-edge flap
+        E_WD = 2; % Wave-drag efficiency factor 1.2 < E_WD < 3
     end
     methods (Static)
         function Re = Re_f(V, L, nu) % Reynolds number
@@ -52,11 +53,30 @@ classdef aerodynamics
 
         function e = ef(... Oswald efficiency
                 A,... Aspect ratio
-                Lambda_LE... Leading edge sweep, deg
+                d,... Fuselage diameter, m
+                lambda,... taper ratio
+                b,... wingspan, m
+                M,...
+                Lambda_025c...Quarter-chord sweep, deg
                 )
-            el = 1.78*(1-0.045*A^0.68)-0.64;
-            eu = 4.61*(1-0.045*A^0.68)*cosd(Lambda_LE)^0.15-3.1;
-            e = interp1([0, 30], [el, eu], Lambda_LE);
+
+            Dlambda = -0.357 + 0.45*exp(0.0375*Lambda_025c);
+            e_theo = (1+A*(0.0524*(lambda-Dlambda)^4-0.15*(lambda-Dlambda)^3+0.1659*(lambda-Dlambda)^2-0.0706*(lambda-Dlambda)+0.0119))^-1;
+
+            k_eF = 1-2*(d/b)^2;
+            k_eD0 = 0.873;
+
+            if M > 0.8
+                k_eM = -0.001521*(M/0.8-1)^10.82+1;
+            else
+                k_eM = 1;
+            end
+
+            e = e_theo*k_eF*k_eD0*k_eM; % Scholz correlation for oswald efficiency
+
+            % el = 1.78*(1-0.045*A^0.68)-0.64;
+            % eu = 4.61*(1-0.045*A^0.68)*cosd(Lambda_LE)^0.15-3.1;
+            % e = interp1([0, 30], [el, eu], Lambda_LE);
         end
 
         function delta = deltaf(e)
@@ -67,6 +87,7 @@ classdef aerodynamics
                 M,... Mach number
                 A,... Aspect ratio
                 Lambda_LE,... Leading edge sweep, deg
+                e,... Oswald's efficiency
                 C_L... Lift coefficient
                 )
             % Simplified Expression: C_Di_f = @(C_L, A, delta) C_L^2/(pi*A*(1/(1+delta))); % Induced drag
@@ -134,14 +155,15 @@ classdef aerodynamics
             % sweep, wetted surface is a complete guess. No miscellaneous drag and
             % leakage and protuberance is 10%.
 
-            C_fi = [aerodynamics.C_f_f(M, V_inf, L_fus, nu_inf), aerodynamics.C_f_f(M, V_inf, 3.2, nu_inf), aerodynamics.C_f_f(M, V_inf, 0.2*L_fus, nu_inf), aerodynamics.C_f_f(M, V_inf, 0.3*L_fus)];
+            C_fi = [aerodynamics.C_f_f(M, V_inf, L_fus, nu_inf), 6*aerodynamics.C_f_f(M, V_inf, 3.2, nu_inf), aerodynamics.C_f_f(M, V_inf, 0.2*L_fus, nu_inf), aerodynamics.C_f_f(M, V_inf, 0.3*L_fus, nu_inf)];
             FF_i = [aerodynamics.FF_fuselage_canopy(0.2*L_fus, pi*(0.15*L_fus)^2/4), aerodynamics.FF_store(3.2, pi*.35^2/4), aerodynamics.FF_fuselage_canopy(0.2*L_fus, (0.05*L_fus)^2/4), aerodynamics.FF_tail(0.12, 0.3, M, 30)];
             Q_i = [1, 1.3, 1, 1.04];
             S_wet_i = [0.4*S_wet, 0.05*S_wet, 0.08*S_wet, 0.09*S_wet];
             C_D_misc = 0;
+            tot = 0;
             if M < 1
                 for i = 1:length(C_fi)
-                    tot = tot + C_fi(i)*FF_i(i)*Q_i(i)*S_wet(i);
+                    tot = tot + C_fi(i)*FF_i(i)*Q_i(i)*S_wet_i(i);
                 end
                 C_D0 = 1.1*(tot/S_ref+C_D_misc);
             else
@@ -158,29 +180,31 @@ classdef aerodynamics
                 l,... Body length, m
                 Lambda_LE,... Leading edge sweep, RAD
                 Lambda_025c,... Quarter-chord sweep, DEG
-                S_ref,... Reference area, m^2
-                E_WD) % Wave-drag efficiency factor 1.2 < E_WD < 3
+                S_ref... Reference area, m^2
+                )
 
-            M_DD = 0.15*Lambda_025c+0.74; % Crude divergent drag mach approximation from drag maps
+            M_DD = 0.004*Lambda_025c+0.72; % Crude divergent drag mach approximation from drag maps
             M_cr = M_DD-0.08;
 
             Dq_SH = 9*pi/2*(A_max/l)^2; % Sears-Haack correlation
-            Dq_w = E_WD*(1-0.2*(M-1.2)^0.57)*(1-pi*Lambda_LE^0.77/100)*Dq_SH;
-            B = E_WD*(1-pi*Lambda_LE^0.77/100)*Dq_SH;
+            Dq_w = aerodynamics.E_WD*(1-0.2*(M-1.2)^0.57)*(1-pi*Lambda_LE^0.77/100)*Dq_SH;
+            B = aerodynamics.E_WD*(1-pi*Lambda_LE^0.77/100)*Dq_SH;
 
-            if M < M_cr % Drag rise curves
+            if M < M_cr
                 C_Dw = 0;
             elseif M < M_DD
-                C_Dw = 0.002/0.08*M-0.002/0.08*M_cr;
+                C_Dw = 0.002/(M_DD-M_cr)*M-0.002/(M_DD-M_cr)*M_cr;
+            elseif M < 1
+                C_Dw = (B/2-0.002)/(1-M_DD)*M-(0.5*B-0.002)/(1-M_DD)*M_DD+0.002;
             elseif M < 1.05
-                C_Dw = (B-0.002)/(1.05-M_DD)*M+(0.002/0.08*M_DD-0.002/0.08*M_cr-(B-(0.002/0.08*M_DD-0.002/0.08*M_cr)/(1.05-M_DD)*M_DD));
+                C_Dw = 0.5*B/0.05*M-0.5*B/0.05+0.5*B;
             elseif M < 1.2
                 C_Dw = B;
             else
                 C_Dw = Dq_w/S_ref;
             end
         end
-        
+
         function C_L = C_L_f(L, q_inf, S_ref) % Lift coefficient
             C_L = L/(q_inf*S_ref);
         end
@@ -188,7 +212,7 @@ classdef aerodynamics
         function alpha_i = alpha_i_f(C_L, A, delta) % Induced AoA, rad
             alpha_i = C_L/(pi*A)*(1+delta);
         end
-        
+
         function sweepx = Sweeptf(Lambda_x, x, y, A, lambda)% Sweep angle (deg) of y% chord from sweep (rad) at x% chord, AR, and taper
             sweepx = atand(tan(Lambda_x)-4*(y-x)*(1-lambda)/(A*100*(1+lambda)));
         end
@@ -230,11 +254,7 @@ classdef aerodynamics
             F = 1.07*(1+d/b)^2;
 
             if M > 1/cos(Lambda_LE)
-                disp('Supersonic lift correction outside of bounds')
-                disp('Mach:')
-                M %#ok<NOPRT>
-                disp('Lambda_LE:')
-                Lambda_LE %#ok<NOPRT>
+                warning(['Supersonic lift correction outside of bounds. Lambda_LE: ', num2str(Lambda_LE), '. Mach: ', num2str(M)])
                 a = NaN;
                 return
             end
@@ -302,7 +322,7 @@ classdef aerodynamics
                 0.7, 0.7, 0.75, 0.9, 1, 1.2;
                 1.5, 1.5, 1.6, 1.7, 1.8, 2;
                 3.2, 3.1, 3, 3, 2.9, 2.8;
-                3.8, 2.9, 3.8, 3.5, 3.4, 3.3;
+                3.8, 3.9, 3.8, 3.5, 3.4, 3.3;
                 4.1, 4.2, 4, 3.9, 3.8, 3.7;
                 4.4, 4.5, 4.3, 4.2, 4.2, 4.3;
                 4.6, 4.7, 4.5, 4.4, 4.6, 4.7
@@ -390,7 +410,7 @@ classdef aerodynamics
 
             if factor > 1
                 factor = 1/factor;
-                factorx = 1:0.2:0;
+                factorx = 1:-0.2:0;
 
                 lower = interp1(factorx, RHS(i, :, j), factor);
                 upper = interp1(factorx, RHS(i+1, :, j), factor);
@@ -422,7 +442,7 @@ classdef aerodynamics
             a = C_L_alpha*S_exposed/S_ref*F;
 
         end
-        
+
         function [... Maximum lift calculations
                 C_L_max,... Max lift coefficient for wing
                 alpha_C_L_max... AoA of max lift, rad
@@ -433,64 +453,90 @@ classdef aerodynamics
                 a,... C_L_alpha (slope of CL vs alpha curve for wing), rad^-1
                 Lambda_LE,... Leading edge sweep, rad
                 A,... Aspect ratio
+                S_ref,... Reference area, m^2
                 lambda... Taper ratio
                 )
-            
-                vals = [
-                    0.9, 0.92, 0.97, 1.03, 1.1, 1.19, 1.25;
-                    0.9, 0.91, 0.95, 0.98, 1.04, 1.12, 1.18;
-                    0.9, 0.91, 0.93, 0.95, 0.98, 1, 1.02;
-                    0.9, 0.89, 0.886, 0.883, 0.88, 0.87, 0.86;
-                    0.9, 0.88, 0.87, 0.85, 0.81, 0.78, 0.73;
-                    0.9, 0.87, 0.86, 0.81, 0.77, 0.69, 0.59
+
+            vals = [
+                0.9, 0.92, 0.97, 1.03, 1.1, 1.19, 1.25;
+                0.9, 0.91, 0.95, 0.98, 1.04, 1.12, 1.18;
+                0.9, 0.91, 0.93, 0.95, 0.98, 1, 1.02;
+                0.9, 0.89, 0.886, 0.883, 0.88, 0.87, 0.86;
+                0.9, 0.88, 0.87, 0.85, 0.81, 0.78, 0.73;
+                0.9, 0.87, 0.86, 0.81, 0.77, 0.69, 0.59
                 ];
-            
-               
-                dyx = 1.4:0.2:2.4;
-                LLEx = 0:10:60;
-               
-                
-                for i = 1:size(vals, 1)
-                    if deltay < dyx(i+1) && deltay > dyx(i)
-                        break
-                    end
+
+
+            dyx = 1.4:0.2:2.4;
+            LLEx = 0:10:60;
+
+
+            for i = 1:size(vals, 1)
+                if deltay <= dyx(1)
+                    i = 1; %#ok<FXSET>
+                    break
+                elseif deltay >= dyx(end)
+                    i = size(vals,1); %#ok<FXSET>
+                    break
                 end
-                
-                l = interp1(LLEx, vals(i,:), rad2deg(Lambda_LE));
+                if deltay <= dyx(i+1) && deltay >= dyx(i)
+                    break
+                end
+            end
+
+            l = interp1(LLEx, vals(i,:), rad2deg(Lambda_LE));
+            if i == size(vals, 1)
+                CLCl = l;
+            else
                 u = interp1(LLEx, vals(i+1,:), rad2deg(Lambda_LE));
                 CLCl = interp1(dyx(i:i+1), [l, u], deltay);
-                
-                S_flapped_TE = 0.15*S_ref; % Approximation of slatted surface area
-                S_flapped_LE = 0.08*S_ref; % Approximation of flapped surface area
-                Lambda_HL_TE = aerodynamics.Sweeptf(Lambda_LE, 0, 5, A, lambda); % Sweep of trailing edge hinge line, deg
-                Lambda_HL_LE = aerodynamics.Sweeptf(Lambda_LE, 0, 85, A, lambda); % Sweep of leading edge hinge line, deg
-                
-                DC_Lmax_TE = 0.9*aerodynamics.DC_l_max_TE*S_flapped_TE/S_ref*cosd(Lambda_HL_TE);
-                DC_Lmax_LE = 0.9*aerodynamics.DC_l_max_LE*S_flapped_LE/S_ref*cosd(Lambda_HL_LE);
-                DC_Lmax = DC_Lmax_TE + DC_Lmax_LE;
-                
-                vals = [
-                    1.9, 2.1, 3.3, 4.5, 7.4, 10, 14;
-                    0.2, 1, 2.4, 3.9, 5.7, 7.5, 9.8;
-                    1.2, 1.7, 2.4, 3.2, 4.2, 5.3, 6.6;
-                    2.3, 2, 2.1, 2.3, 2.5, 2.9, 3.2
+            end
+            
+            
+
+            S_flapped_TE = 0.15*S_ref; % Approximation of slatted surface area
+            S_flapped_LE = 0.08*S_ref; % Approximation of flapped surface area
+            Lambda_HL_TE = aerodynamics.Sweeptf(Lambda_LE, 0, 5, A, lambda); % Sweep of trailing edge hinge line, deg
+            Lambda_HL_LE = aerodynamics.Sweeptf(Lambda_LE, 0, 85, A, lambda); % Sweep of leading edge hinge line, deg
+
+            DC_Lmax_TE = 0.9*aerodynamics.DC_l_max_TE*S_flapped_TE/S_ref*cosd(Lambda_HL_TE);
+            DC_Lmax_LE = 0.9*aerodynamics.DC_l_max_LE*S_flapped_LE/S_ref*cosd(Lambda_HL_LE);
+            DC_Lmax = DC_Lmax_TE + DC_Lmax_LE;
+
+            vals = [
+                1.9, 2.1, 3.3, 4.5, 7.4, 10, 14;
+                0.2, 1, 2.4, 3.9, 5.7, 7.5, 9.8;
+                1.2, 1.7, 2.4, 3.2, 4.2, 5.3, 6.6;
+                2.3, 2, 2.1, 2.3, 2.5, 2.9, 3.2
                 ];
-                
-                dyx = [1.2, 2, 3, 4];
-                LLEx = 0:10:60;
-                
-                for i = 1:size(vals, 1)
-                    if deltay < dyx(i+1) && deltay > dyx(i)
-                        break
-                    end
+
+            dyx = [1.2, 2, 3, 4];
+            LLEx = 0:10:60;
+
+            for i = 1:size(vals, 1)
+                if deltay <= dyx(1)
+                    i = 1; %#ok<FXSET>
+                    break
+                elseif deltay >= dyx(end)
+                    i = size(vals,1); %#ok<FXSET>
+                    break
                 end
-                
-                l = interp1(LLEx, vals(i,:), rad2deg(Lambda_LE));
+                if deltay <= dyx(i+1) && deltay >= dyx(i)
+                    break
+                end
+            end
+
+            l = interp1(LLEx, vals(i,:), rad2deg(Lambda_LE));
+            if i == size(vals, 1)
+                Dalpha_C_L_max = l;
+            else
                 u = interp1(LLEx, vals(i+1,:), rad2deg(Lambda_LE));
                 Dalpha_C_L_max = interp1(dyx(i:i+1), [l, u], deltay);
-                
-                C_L_max = C_l_max*CLCl + DC_Lmax;
-                alpha_C_L_max = C_L_max/a + alpha_ZL + Dalpha_C_L_max;
+            end
+            
+
+            C_L_max = C_l_max*CLCl + DC_Lmax;
+            alpha_C_L_max = C_L_max/a + alpha_ZL + deg2rad(Dalpha_C_L_max); % something highly suspect is going on... AoA_stall above 20deg lol
         end
 
         function [... Wing Sizing Function
@@ -519,26 +565,32 @@ classdef aerodynamics
                 xc_m,... Normalized location of maximum thickness of airfoil
                 deltay_root,... t(x=0.06*C)-t(x=0.0015*C) from airfoil
                 deltay_tip,... t(x=0.06*C)-t(x=0.0015*C) from airfoil
+                L_fus,... Length of fuselage, m
+                A_max,... Maximum cross-sectional area, m^2
                 d... Diameter of fuselage, m
                 )
 
             % Should probably also check pitching moment to size canards to resize wing
             % Should probably also account for wing twist
 
-            Lambda_maxt = Sweeptf(deg2rad(Lambda_LE), 0, xc_m, A, lambda); % Sweep angle of maximum thickness, deg
-            Lambda_025c = Sweeptf(deg2rad(Lambda_LE), 0, 25, A, lambda); % Sweep angle of quarter-chord, deg
-            Lambda_TE = Sweeptf(deg2rad(Lambda_LE), 0, 100, A, lambda); % Sweep angle at trailing edge, deg
-
-            C_L = C_L_f(W0, q_inf, S_ref);
+            
+            C_L = aerodynamics.C_L_f(W0, q_inf, S_ref);
 
             S_canard = 0.07*S_ref; % guess at canard size
 
             A = b^2/(S_ref+S_canard); % Aspect ratio (not using taper formula because it isnt correct apparently)
             MAC = A/b;
-            e = ef(A, Lambda_LE);
-            delta = deltaf(e);
+            Lambda_maxt = aerodynamics.Sweeptf(deg2rad(Lambda_LE), 0, xc_m, A, lambda); % Sweep angle of maximum thickness, deg
+            Lambda_025c = aerodynamics.Sweeptf(deg2rad(Lambda_LE), 0, 25, A, lambda); % Sweep angle of quarter-chord, deg
+            Lambda_TE = aerodynamics.Sweeptf(deg2rad(Lambda_LE), 0, 100, A, lambda); % Sweep angle at trailing edge, deg
 
-            C_Di = C_Di_f(C_L, A, delta); % Induced drag coefficient
+            e = aerodynamics.ef(A, d, lambda, b, M, Lambda_025c);
+            delta = aerodynamics.deltaf(e);
+            
+
+            C_Di = aerodynamics.C_Di_f(M, A, Lambda_LE, e, C_L); % Induced drag coefficient
+
+            C_root = 2*S_ref/(b*(1+lambda));
 
             S_exposed = S_ref-C_root*0.1*S_ref; % Estimate of exposed area, m^2
             tc = (tc_root+tc_tip)/2;
@@ -549,23 +601,23 @@ classdef aerodynamics
             end
             S_wet_fuselage = 1.7*(A_top+A_side);
             S_wet_tot = S_wet + S_wet_fuselage;
-            
-            Re = Ref(V_inf, MAC, nu_inf);
+
+            Re = aerodynamics.Re_f(V_inf, MAC, nu_inf);
             [a0_root, a0_tip] = airfoil.a0(Re);
-            
+
             if M < 1
-                C_L_alpha = C_L_alpha_sub_f(A, M, (a0_root+a0_tip)/2, d, b, S_exposed, S_ref, Lambda_maxt);
+                C_L_alpha = aerodynamics.C_L_alpha_sub_f(A, M, (a0_root+a0_tip)/2, d, b, S_exposed, S_ref, Lambda_maxt);
             else
-                C_L_alpha = C_L_alpha_sup_f(A, b, lambda, Lambda_LE, S_ref, S_exposed, M, d);
+                C_L_alpha = aerodynamics.C_L_alpha_sup_f(A, b, lambda, Lambda_LE, S_ref, S_exposed, M, d);
             end
 
-            [alpha_ZL_root, alpha_ZL_tip] = airfoil.zerolift(Re);
+            [alpha_ZL_root, alpha_ZL_tip] = airfoil.zerolift(Re); % zero-lift AoA, rad
 
             alpha_root = (C_L+alpha_ZL_root*C_L_alpha)/C_L_alpha; % true angle of attack, rad
             alpha_tip = (C_L+alpha_ZL_tip*C_L_alpha)/C_L_alpha;
 
-            alpha_eff_root = alpha_root - alpha_i_f(C_L, A, delta); % effective angle of attack, rad
-            alpha_eff_tip = alpha_tip - alpha_i_f(C_L, A, delta); % effective angle of attack, rad
+            alpha_eff_root = alpha_root - aerodynamics.alpha_i_f(C_L, A, delta); % effective angle of attack, rad
+            alpha_eff_tip = alpha_tip - aerodynamics.alpha_i_f(C_L, A, delta); % effective angle of attack, rad
 
 
             % Should probably account for trim drag C_Di_trim
@@ -575,17 +627,16 @@ classdef aerodynamics
 
             [C_lmax_root, C_lmax_tip] = airfoil.clmax(Re);
 
-            [C_Lmax_root, alpha_stall_root] = maxlift(deltay_root, alpha_ZL_root, C_lmax_root, C_L_alpha, Lambda_LE, A, lambda);
-            [C_Lmax_tip, alpha_stall_tip] = maxlift(deltay_tip, alpha_ZL_tip, C_lmax_tip, C_L_alpha, Lambda_LE, A, lambda);
+            [C_Lmax_root, alpha_stall_root] = aerodynamics.maxlift(deltay_root, alpha_ZL_root, C_lmax_root, C_L_alpha, deg2rad(Lambda_LE), A, S_ref, lambda);
+            [C_Lmax_tip, alpha_stall_tip] = aerodynamics.maxlift(deltay_tip, alpha_ZL_tip, C_lmax_tip, C_L_alpha, deg2rad(Lambda_LE), A, S_ref, lambda);
             alpha_stall = min([alpha_stall_root, alpha_stall_tip]);
             C_Lmax = mean([C_Lmax_root, C_Lmax_tip]);
-    
-            [Cd_root, Cd_tip, Cl_root, Cl_tip, Cm_root, Cm_tip] = airfoil.airfoil(alpha_root, alpha_tip, alpha_eff_root, alpha_eff_tip, Re);
-            
-            % C_D0 = 0.004*S_wet_tot/S_ref;
-            C_D0 = (Cd_root + Cd_tip)/2 + C_D0_f(M, V_inf, L_fus, nu_inf, S_wet_tot, S_ref); % Parasite drag coefficient
 
-            C_Dw = C_Dw_f(M, A_max, l, deg2rad(Lambda_LE), Lambda_025c, S_ref, E_WD); % Wave drag coefficient
+            [Cd_root, Cd_tip, Cl_root, Cl_tip, Cm_root, Cm_tip] = airfoil.coefficients(alpha_root, alpha_tip, alpha_eff_root, alpha_eff_tip, Re); %#ok<ASGLU>
+            
+            C_D0 = (Cd_root + Cd_tip)/2 + aerodynamics.C_D0_f(M, V_inf, L_fus, nu_inf, S_wet_tot, S_ref); % Parasite drag coefficient
+
+            C_Dw = aerodynamics.C_Dw_f(M, A_max, L_fus, deg2rad(Lambda_LE), Lambda_025c, S_ref); % Wave drag coefficient
 
             C_D = C_D0 + C_Di + C_Dw; % Total drag coefficient
 
@@ -593,7 +644,7 @@ classdef aerodynamics
 
             % Abandoned canard sizing
             % % S_canard = ?
-            % 
+            %
             % C_m = ; % Quarter-chord pitching moment of wing from airfoil
             % M_w = b*q_inf*MAC^2*C_m;
             % C_m_c = ;
