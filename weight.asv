@@ -96,8 +96,7 @@ classdef weight
                 t_lol,...Loiter to landing time (holding time), s
                 A,... Aspect ratio, []
                 TW0,... Design thrust to weight ratio, []
-                WS0... Design wing loading, N/m^2??????????????????????????????
-                )
+                ) % 
 
             MP = [weight.W_to, weight.W_cl(0.2, M_cr), weight.W_cr(R, C_cr, V_cr, Ld_cr), weight.W_de,...
                 weight.W_loi(E, C_loi, Ld_loi), weight.W_cl(M_loi, M_cr),...
@@ -123,7 +122,7 @@ classdef weight
                 end
 
                 W_f = K_rf*sum(W_fi);
-                WeW0 = weight.WeW0(W_0g, A, TW0, WS0, M_loi);
+                WeW0 = weight.WeW0(W0, A, TW0, WS0, M_max);
                 W_0 = abs((W_c+W_p+W_d+W_f)/(1-WeW0));
 
                 eps = abs(W_0 - W_0g);
