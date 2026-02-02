@@ -222,7 +222,7 @@ classdef subsystems
             xcg_g = obj.x_cg;
             err = 0.002;
             while err > 0.001
-
+                % Totally wrong, should not remove non removable loads!!!!!
                 W_aft = obj.cgdata(obj.cgdata(:,1)<xcg_g,3);
                 num = sum(obj.cgdata(:,1).*obj.cgdata(:,3)) - sum( W_aft.*obj.cgdata(obj.cgdata(:,1)<xcg_g, 1) );
                 xcg = num/( sum(obj.cgdata(:,3))-sum(W_aft) );

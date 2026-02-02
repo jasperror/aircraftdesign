@@ -547,7 +547,7 @@ methods % Airfoil Data Setup
         function C_Dw = get.C_Dw(obj) % Wave drag coefficient
             Dq_SH = 9*pi/2*(obj.A_max/obj.L_fus)^2; % Sears-Haack correlation
             Dq_w = obj.E_WD*(1-0.2*(obj.M-1.2)^0.57)*(1-pi*obj.Lambda_LE^0.77/100)*Dq_SH;
-            B = aerodynamics.E_WD*(1-pi*obj.Lambda_LE^0.77/100)*Dq_SH;
+            B = obj.E_WD*(1-pi*obj.Lambda_LE^0.77/100)*Dq_SH;
             if obj.M < obj.M_cr
                 C_Dw = 0;
             elseif obj.M < obj.M_DD

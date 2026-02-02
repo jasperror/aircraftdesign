@@ -193,7 +193,7 @@ classdef performance
             V_s = V_app/1.2; % approximating stall speed from approach speed
             WS_0 = performance.stall(h, C_Lmax, W_0x, V_s);
         end
-
+% really need to consider structural limits somehow. Wing structure most critical? Function of AR?
         function WS_0 = sturn(... Sustained turn wing loading
                 TW_0,... Design thrust to weight ratio
                 W_0x,... Weight fraction at analysis point
