@@ -438,7 +438,7 @@ ylabel("R, m")
 zlabel("m_0, kg")
 
 %%
-% plot stuff
+
 % figure
 % contourf(b, lambda, Z(:,:,1,1))
 % c = colorbar;
