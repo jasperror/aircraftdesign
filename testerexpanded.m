@@ -2,6 +2,8 @@
 clear
 tic
 
+% Another comment
+
 %% Constants
 
 AIM120C = 348/2.2; % AIM-120C weight, kg
