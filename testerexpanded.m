@@ -1,7 +1,7 @@
 % close all
 clear
 tic
-% Hello
+
 % Another comment
 
 %% Constants
