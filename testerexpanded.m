@@ -2,6 +2,7 @@
 clear
 tic
 % Hello
+% Another comment
 
 %% Constants
 
