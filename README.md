@@ -1,5 +1,5 @@
-# aircraftdesign
-Course project for ENGR493 Intro to Aircraft Design.
+# Conceptual Aircraft Design Optimization Solver (CADOS)
+Course project for ENGR493 Intro to Aircraft Design/AIAA Carrier-based Strike Fighter Competition Project
 
 Welcome to the project!
 The general structure is as follows:
